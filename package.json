@@ -1,0 +1,17 @@
+{
+  "name": "levi-bot",
+  "version": "1.0.0",
+  "description": "Levi-Bot con conexión por parincode (Baileys 2025)",
+  "main": "index.js",
+  "type": "module",
+  "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "@whiskeysockets/baileys": "^6.7.20",
+    "cfonts": "^3.3.1",
+    "chalk": "^5.6.2",
+    "figlet": "^1.9.3",
+    "gradient-string": "^3.0.0",
+    "node-fetch": "^3.3.2",
+    "pino": "^9.4.0"
+  }
+}
