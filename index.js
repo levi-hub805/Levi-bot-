@@ -1,12 +1,14 @@
-// CREADOR: Jeferson Fernández ⚔️
+// CREADOR: Jeferson Fernández ⚔️ Colab Sergio Gómez Gort 
 
 // 📦 IMPORTACIONES
 import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
+  downloadMediaMessage,
   makeCacheableSignalKeyStore,
   fetchLatestBaileysVersion
 } from "@whiskeysockets/baileys";
+import sharp from "sharp";
 import pino from "pino";
 import readline from "readline";
 import fs from "fs";
@@ -68,7 +70,7 @@ const banner = cfonts.render("Levi|Bot", {
 });
 
 // Texto secundario debajo del banner
-const subBanner = cfonts.render("⚔️ by Jeferson Fernández 💫", {
+const subBanner = cfonts.render("⚔️ by Jeferson Fernández 💫 from Sergio Gómez Gort", {
   font: "console",
   align: "center",
   gradient: ["yellow", "cyan"]
@@ -104,35 +106,57 @@ async function startLevi() {
     logger: pino({ level: "silent" })
   });
 
-  // 🔐 Vinculación del dispositivo
-  if (!sock.authState.creds.registered) {
-    const phoneNumber = await ask("📱 Ingresa tu número de WhatsApp (ejemplo: 573001234567): ");
-    const code = await sock.requestPairingCode(phoneNumber);
-    console.log(`\n🔐 Tu código de vinculación es: ${code}`);
-    console.log("➡️ En tu WhatsApp: Dispositivos vinculados → Vincular dispositivo → Introducir código.\n");
+// 🔐 Vinculación del dispositivo (controlada por eventos)
+let pairingCodeRequested = false;
+let phoneNumber = null;
+
+if (!sock.authState.creds.registered) {
+  // En local usará la consola; en BotKeep leerá el secreto WHATSAPP_NUMBER
+  phoneNumber = process.env.WHATSAPP_NUMBER || await ask("📱 Ingresa tu número de WhatsApp (ejemplo: 573001234567): ");
+  if (!phoneNumber) {
+    console.error("❌ Error: Define la variable de entorno WHATSAPP_NUMBER o ingresa el número manualmente.");
+    process.exit(1);
+  }
+  console.log(`📱 Número configurado para vincular: ${phoneNumber}`);
+}
+
+sock.ev.on("creds.update", saveCreds);
+
+// ⚙️ Estado de conexión
+sock.ev.on("connection.update", async (update) => {
+  const { connection, lastDisconnect, qr } = update;
+
+  // 🟢 Pedir el parincode SOLO cuando la conexión esté lista
+  if (
+    !sock.authState.creds.registered &&
+    !pairingCodeRequested &&
+    (connection === "connecting" || qr)
+  ) {
+    pairingCodeRequested = true;
+    try {
+      const code = await sock.requestPairingCode(phoneNumber);
+      console.log(`\n🔐 Tu código de vinculación es: ${code}`);
+      console.log("➡️ En tu WhatsApp: Dispositivos vinculados → Vincular dispositivo → Introducir código.\n");
+    } catch (err) {
+      console.error("❌ Error al solicitar el parincode:", err.message);
+      pairingCodeRequested = false; // Permitir reintento
+    }
   }
 
-  sock.ev.on("creds.update", saveCreds);
+  if (connection === "open") {
+    console.log(`✅ ${BOT_NAME} conectado correctamente.`);
+  }
 
-  // ⚙️ Estado de conexión
-  sock.ev.on("connection.update", (update) => {
-    const { connection, lastDisconnect } = update;
-
-    if (connection === "open") {
-      console.log(`✅ ${BOT_NAME} conectado correctamente.`);
+  if (connection === "close") {
+    const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
+    if (reason === DisconnectReason.loggedOut) {
+      console.log("❌ Sesión cerrada. Borra la carpeta /session y vuelve a generar el parincode.");
+    } else {
+      console.log("♻️ Reconectando...");
+      startLevi();
     }
-
-    if (connection === "close") {
-      const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
-      if (reason === DisconnectReason.loggedOut) {
-        console.log("❌ Sesión cerrada. Borra la carpeta /session y vuelve a generar el parincode.");
-      } else {
-        console.log("♻️ Reconectando...");
-        startLevi();
-      }
-    }
-  });
-
+  }
+});
   // 🟢 Escuchar mensajes
   sock.ev.on("messages.upsert", async ({ messages }) => {
     const m = messages[0];
@@ -153,13 +177,10 @@ async function startLevi() {
 
     console.log(`💬 [${from}] ${texto}`);
     console.log(`🧩 Comando detectado: ${comando}`);
-    
-    
+
+
     // ⚔️ Comandos tipo CASE
-    switch (comando) {
-    
-    
-      case "menu":
+          case "menu":
 case "help": {
   const user = m.pushName || "Usuario";
   const numero = sender.split("@")[0];
@@ -186,6 +207,25 @@ case "help": {
 │ 💳 ${PREFIX}bal → Consulta tu balance actual
 │ 🏦 ${PREFIX}shop → Próximamente: tienda de objetos
 ╰────────────────────────────╯
+╭─⭑ *𝐔𝐓𝐈𝐋𝐈𝐃𝐀𝐃𝐄𝐒* ⚙️
+│ 🏓 ${PREFIX}ping → Mide la latencia del bot
+│ 🪧 ${PREFIX}help/${PREFIX}menu → Ver este menu
+╰────────────────────────────╯
+╭─⭑ *𝐌𝐔𝐋𝐓𝐈𝐌𝐄𝐃𝐈𝐀* 🎨
+│ 📌 ${PREFIX}pinterest <búsqueda> → Busca imágenes en Pinterest
+│ 🎵 ${PREFIX}play <canción> → Descarga audio de YouTube
+╰────────────────────────────╯
+
+╭─⭑ *𝐂𝐎𝐍𝐕𝐄𝐑𝐒𝐎𝐑𝐄𝐒* 🖼️
+│ 🖼️ ${PREFIX}toimg → Convierte sticker a imagen (responde al sticker)
+│ 🎨 ${PREFIX}sticker → Convierte imagen a sticker (opcional)
+╰────────────────────────────╯
+
+╭─⭑ *𝐈𝐍𝐓𝐄𝐋𝐈𝐆𝐄𝐍𝐂𝐈𝐀 𝐀𝐑𝐓𝐈𝐅𝐈𝐂𝐈𝐀𝐋* 🧠
+│ 🤖 ${PREFIX}ia <pregunta> → Pregunta a Levi-IA
+│ 💬 ${PREFIX}chatgpt <pregunta> → Alias de IA
+│ ⚡ ${PREFIX}gpt <pregunta> → Alias corto
+╰────────────────────────────╯
 
 ╭─⭑ *𝐏𝐄𝐑𝐅𝐈𝐋𝐄𝐒 𝐘 𝐑𝐄𝐆𝐈𝐒𝐓𝐑𝐎* 🧾
 │ 🧍 ${PREFIX}reg <nombre> <edad> <género> → Crear perfil
@@ -202,9 +242,8 @@ case "help": {
 ╰────────────────────────────╯
 
 ╭─⭑ *𝐏𝐑𝐔𝐄𝐁𝐀𝐒* ⚔️
-│ ✦ ${PREFIX}PING
-│ ✦ ${PREFIX}rankcoins 
-│ ✦ ${PREFIX}ranknivel 
+│ ✦ ${PREFIX}rankcoins
+│ ✦ ${PREFIX}ranknivel
 │ ✦ ${PREFIX}INFO
 ╰────────────────────────────╯
 
@@ -222,11 +261,205 @@ ${FOOTER}
   );
   break;
 }
-      case "ping": {
-        await enviartexto("🏓 Pong!");
-        break;
-      }
 
+// 🏓 PING con latencia
+case "ping":
+case "p": {
+  const start = Date.now();
+  const sent = await sock.sendMessage(
+    from,
+    { text: "🏓 Calculando..." },
+    { quoted: m }
+  );
+  const latency = Date.now() - start;
+
+  // Editar el mensaje con el resultado real
+  await sock.sendMessage(from, {
+    text:
+      `🏓 *PONG!*\n\n` +
+      `⚡ *Latencia:* ${latency} ms\n` +
+      `📡 *Servidor:* WhatsApp MD\n` +
+      `🤖 *Bot:* ${BOT_NAME}\n` +
+      `📦 *Versión:* ${VERSION}\n\n` +
+      `${FOOTER}`,
+    edit: sent.key
+  });
+
+  break;
+}
+// 🖼️ Convertir sticker a imagen
+case "toimg":
+case "s2i":
+case "sticker2img":
+case "img": {
+  // Buscar el mensaje citado (al que el usuario respondió)
+  const quoted =
+    m.message?.extendedTextMessage?.contextInfo?.quotedMessage ||
+    m.message?.imageMessage?.contextInfo?.quotedMessage ||
+    m.message?.videoMessage?.contextInfo?.quotedMessage;
+
+  if (!quoted) {
+    return enviartexto(
+      `❌ *Uso correcto:*\n` +
+      `1️⃣ Envía o recibe un sticker\n` +
+      `2️⃣ Responde a ese sticker con *${PREFIX}toimg*\n\n` +
+      `Ejemplo: (responder sticker) → ${PREFIX}toimg`
+    );
+  }
+
+  // Verificar que el citado sea un sticker
+  const stickerMsg = quoted.stickerMessage;
+  if (!stickerMsg) {
+    return enviartexto("❌ El mensaje citado *no es un sticker*. Responde directamente al sticker.");
+  }
+
+  // Los stickers animados (webp animado) no se pueden convertir a imagen estática
+  if (stickerMsg.isAnimated) {
+    return enviartexto(
+      "❌ Los *stickers animados* no se pueden convertir a imagen estática.\n" +
+      "Prueba con un sticker normal."
+    );
+  }
+
+  await sock.sendMessage(from, { react: { text: "⏳", key: m.key } });
+
+  try {
+    // Descargar el buffer del sticker
+    const buffer = await downloadMediaMessage(
+      { key: m.key, message: quoted },
+      "buffer",
+      {},
+      {
+        logger: pino({ level: "silent" }),
+        reuploadRequest: sock.updateMediaMessage
+      }
+    );
+
+    if (!buffer || buffer.length === 0) {
+      throw new Error("Buffer vacío al descargar el sticker");
+    }
+
+    // Convertir webp → png con fondo transparente preservado
+    const pngBuffer = await sharp(buffer)
+      .png({ quality: 100 })
+      .toBuffer();
+
+    // Enviar como imagen
+    await sock.sendMessage(
+      from,
+      {
+        image: pngBuffer,
+        caption: `🖼️ *Sticker convertido a imagen*\n\n${FOOTER}`,
+        mimetype: "image/png"
+      },
+      { quoted: m }
+    );
+
+    await sock.sendMessage(from, { react: { text: "✅", key: m.key } });
+  } catch (err) {
+    console.error("Error en #toimg:", err);
+    await sock.sendMessage(from, { react: { text: "❌", key: m.key } });
+    await enviartexto(
+      `⚠️ No se pudo convertir el sticker.\n` +
+      `_Motivo:_ ${err.message}`
+    );
+  }
+
+  break;
+}
+// 🧠 IA — Inteligencia Artificial (Levi-Bot)
+case "ia":
+case "chatgpt":
+case "gpt": {
+  const text = args.join(" ").trim();
+
+  if (!text) {
+    return enviartexto(
+      `✧ *${BOT_NAME}* ✧\n\n` +
+      `Escribe una *petición* después del comando.\n\n` +
+      `Ejemplo: ${PREFIX}ia ¿Qué es el amor?`
+    );
+  }
+
+  const username = m.pushName || "Usuario";
+  const basePrompt =
+    `Eres Levi-Bot, un asistente creado por Jeferson Fernandez en colaboración con Sergio Gomez Gort. ` +
+    `Responde de forma clara, creativa y útil, con un tono amable y un toque de anime. ` +
+    `Pregunta del usuario: ${text}`;
+
+  // ⏳ Mensaje de "pensando..."
+  const waitMsg = await sock.sendMessage(
+    from,
+    { text: `⏳ *${BOT_NAME}* está pensando...` },
+    { quoted: m }
+  );
+
+  try {
+    let responseText = null;
+
+    // 1️⃣ Intento principal: siputzx (antiguo luminsesi)
+    try {
+      const res = await fetch("https://ai.siputzx.my.id", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: text,
+          user: username,
+          prompt: basePrompt,
+          webSearchMode: false
+        })
+      });
+      const json = await res.json();
+      responseText = json?.result;
+    } catch (err) {
+      console.error("Error siputzx:", err.message);
+    }
+
+    // 2️⃣ Fallback: stellar
+    if (!responseText) {
+      try {
+        const url =
+          `https://api.stellarwa.xyz/ai/gptprompt` +
+          `?text=${encodeURIComponent(text)}` +
+          `&prompt=${encodeURIComponent(basePrompt)}` +
+          `&key=YukiWaBot`;
+        const res = await fetch(url);
+        const json = await res.json();
+        if (json?.result?.text) responseText = json.result.text;
+        else if (json?.result) responseText = json.result;
+        else if (json?.results) responseText = json.results;
+      } catch (err) {
+        console.error("Error stellar:", err.message);
+      }
+    }
+
+    // ❌ Sin respuesta
+    if (!responseText) {
+      await sock.sendMessage(from, {
+        text: "❌ No se pudo obtener una respuesta válida. Intenta más tarde.",
+        edit: waitMsg.key
+      });
+      return;
+    }
+
+    // ✅ Editar el mensaje de espera con la respuesta
+    await sock.sendMessage(from, {
+      text: `${responseText.trim()}\n\n${FOOTER}`,
+      edit: waitMsg.key
+    });
+
+  } catch (error) {
+    console.error("Error en #ia:", error);
+    try {
+      await sock.sendMessage(from, {
+        text: `⚠️ Error inesperado: ${error.message}`,
+        edit: waitMsg.key
+      });
+    } catch {}
+  }
+
+  break;
+}
       case "info": {
         await enviartexto(
           `🤖 *${BOT_NAME}*\n📦 Versión: ${VERSION}\n👑 Owner: ${OWNER_NAME}\n📱 wa.me/${OWNER_NUMBER}\n\n${FOOTER}`
@@ -248,9 +481,9 @@ case "reg": {
 
   const textoReg = `
 ╭─╼┈━༻ ⚔️ *REGISTRO COMPLETADO* ⚔️ ༺━┈╾─╮
-│  ✨ *Bienvenido @${numero}*  
+│  ✨ *Bienvenido @${numero}*
 │  Has sido registrado exitosamente.
-│  
+│
 │  💬 *Nombre:* ${nombre}
 │  🎂 *Edad:* ${edad}
 │  ⚧ *Género:* ${genero.toUpperCase()}
@@ -347,9 +580,8 @@ case "eliminarperfil": {
   );
 
   break;
-}
-      
-      // 🧾 Ver perfil completo (Información + RPG)
+  }
+     // 🧾 Ver perfil completo (Información + RPG)
 case "perfil": {
   const levi = regix[sender];
   if (!levi)
@@ -420,7 +652,7 @@ ${FOOTER}
         break;
       }
 
-      
+
 
       case "reiniciarrpg": {
         if (!rpg[sender]) return enviartexto("❌ No tienes datos RPG guardados.");
@@ -453,7 +685,7 @@ ${FOOTER}
         await enviartexto(`✨ Has elegido la clase: *${rpg[sender].clase}*\n\n${descripciones[eleccion]}`);
         break;
       }
-      
+
       // 💰 SISTEMA DE COINS — LEVI-BOT
 case "coins":
 case "balance":
@@ -466,7 +698,7 @@ case "bal": {
   const exp = user.exp || 0;
 
   // 💎 Estilo visual mejorado
-  const mensaje = 
+  const mensaje =
 `╭───「 *💰 Balance Actual* 」
 │
 │ 💳 *Usuario:* @${sender.split("@")[0]}
@@ -698,6 +930,114 @@ case "ranknivel": {
   await sock.sendMessage(from, { text: texto.trim(), mentions: [sender] }, { quoted: m });
   break;
 }
+// 📌 Pinterest — buscar y enviar imagen
+case "pinterest":
+case "pin": {
+  const query = args.join(" ").trim();
+
+  if (!query) {
+    return enviartexto(
+      `❌ Uso: ${PREFIX}pinterest <búsqueda>\n` +
+      `Ejemplo: ${PREFIX}pinterest atardecer`
+    );
+  }
+
+  await sock.sendMessage(from, { react: { text: "🔍", key: m.key } });
+  const waitMsg = await sock.sendMessage(
+    from,
+    { text: `🔍 Buscando en Pinterest: *${query}*...` },
+    { quoted: m }
+  );
+
+  // 🌐 Lista de APIs (se prueban en orden hasta que una responda)
+  const apis = [
+    `https://tester-web.onrender.com/api/pinterest?query=${encodeURIComponent(query)}&limit=1`,
+    `https://api.stellarwa.xyz/search/pinterest?query=${encodeURIComponent(query)}&key=YukiWaBot`,
+    `https://api.delirius.store/search/pinterest?text=${encodeURIComponent(query)}`,
+    `https://api.vreden.web.id/api/v1/search/pinterest?query=${encodeURIComponent(query)}`,
+    `https://api.siputzx.my.id/api/s/pinterest?query=${encodeURIComponent(query)}&type=image`
+  ];
+
+  let mediaUrl = null;
+
+  for (const url of apis) {
+    try {
+      const res = await fetch(url, {
+        timeout: 10000,
+        headers: { "User-Agent": "Mozilla/5.0" }
+      });
+      if (!res.ok) continue;
+
+      const data = await res.json();
+      let extractedUrl = null;
+
+      if (url.includes("tester-web")) {
+        if (data.results && data.results.length > 0) {
+          extractedUrl = data.results[0].descarga || data.results[0].url;
+        }
+      } else if (data.result && Array.isArray(data.result) && data.result[0]) {
+        extractedUrl = data.result[0].url || data.result[0].image || data.result[0].thumbnail;
+      } else if (data.data && Array.isArray(data.data) && data.data[0]) {
+        extractedUrl = data.data[0].url || data.data[0].image;
+      } else if (data.images && data.images[0]) {
+        extractedUrl = data.images[0];
+      } else if (data.url) {
+        extractedUrl = data.url;
+      } else if (data.image) {
+        extractedUrl = data.image;
+      }
+
+      if (
+        extractedUrl &&
+        (extractedUrl.startsWith("http://") || extractedUrl.startsWith("https://"))
+      ) {
+        mediaUrl = extractedUrl;
+        break;
+      }
+    } catch (err) {
+      console.error(`Error API Pinterest (${url}): ${err.message}`);
+    }
+  }
+
+  // 🧹 Borrar el mensaje de "buscando..."
+  try {
+    await sock.sendMessage(from, { delete: waitMsg.key });
+  } catch {}
+
+  if (!mediaUrl) {
+    await sock.sendMessage(from, { react: { text: "❌", key: m.key } });
+    return enviartexto(
+      `❌ No se encontraron resultados para "*${query}*". Intenta con otra búsqueda.`
+    );
+  }
+
+  const isVideo = /\.(mp4|webm|mov)$/i.test(mediaUrl);
+  const caption = `📌 *Resultado de Pinterest:* ${query}\n\n${FOOTER}`;
+
+  try {
+    if (isVideo) {
+      await sock.sendMessage(
+        from,
+        { video: { url: mediaUrl }, caption, mimetype: "video/mp4" },
+        { quoted: m }
+      );
+    } else {
+      await sock.sendMessage(
+        from,
+        { image: { url: mediaUrl }, caption },
+        { quoted: m }
+      );
+    }
+    await sock.sendMessage(from, { react: { text: "✅", key: m.key } });
+  } catch (err) {
+    console.error("Error enviando media de Pinterest:", err);
+    await enviartexto(
+      `⚠️ Se encontró el resultado pero no se pudo enviar.\n🔗 URL: ${mediaUrl}`
+    );
+  }
+
+  break;
+}
     case "play": {
   if (!args[0]) return enviartexto(`✳️ Ejemplo:\n${PREFIX + comando} jalebi baby`);
 
@@ -750,7 +1090,8 @@ case "ranknivel": {
   break;
 }
       default:
-        await enviartexto(`❓ Comando no reconocido. Usa ${PREFIX}menu para ver las opciones.`);
+        await enviartexto(`❓ Comando no reconocido. Usa
+> ${PREFIX}menu para ver las opciones.`);
         break;
     }
   });
@@ -764,3 +1105,5 @@ function ask(promptText) {
 
 // 🚀 Iniciar el bot
 startLevi();
+    
+    switch (comando) {
