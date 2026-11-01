@@ -1,0 +1,18 @@
+{
+  "name": "levi-bot",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@hapi/boom": "^10.0.1",
+    "@img/sharp-wasm32": "^0.35.5",
+    "@whiskeysockets/baileys": "^6.7.20",
+    "cfonts": "^3.3.1",
+    "chalk": "^5.6.2",
+    "node-fetch": "^3.3.2",
+    "pino": "^9.4.0",
+    "sharp": "^0.35.5"
+  }
+}
