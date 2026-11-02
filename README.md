@@ -35,15 +35,15 @@
 ```bash
 pkg update && pkg upgrade -y
 
-```bash
+```
 pkg install git
 
-```bash
+```
 pkg install nodejs-lts -y
 
-```bash
+```
 git clone https://github.com/levi-hub805/Levi-bot-.git
 cd Levi-bot-
-```bash
+```
 npm install
 npm start
