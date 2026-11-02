@@ -1,4 +1,4 @@
-// CONFIGURACIÓN GLOBAL DE LEVI-BOT ⚔️
+// configuración global.
 export const config = {
   prefix: "#",
   botName: "Levi-Bot ⚔️",
